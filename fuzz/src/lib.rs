@@ -11,7 +11,7 @@ pub mod error;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod file;
 
-// GPU module only available when CUDA is available
+// GPU fuzzer module (only available when CUDA is available)
 #[cfg(cuda_available)]
 pub mod gpu;
 pub use array::Action;
