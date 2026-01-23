@@ -22,6 +22,7 @@ default = ["native"]
 native = ["libfuzzer-sys", "zstd", "vortex-file", "vortex/files"]
 wasmfuzz = []
 zstd = ["vortex/zstd"]
+cuda = ["vortex-cuda", "tokio"]
 
 [dependencies]
 # Always needed - arbitrary is used for input generation
@@ -47,6 +48,10 @@ vortex-utils = { workspace = true }
 # Native-only: libfuzzer harness and file IO (won't compile to WASM)
 libfuzzer-sys = { workspace = true, optional = true }
 vortex-file = { workspace = true, optional = true }
+
+# GPU support dependencies (optional, only for CUDA fuzzing)
+vortex-cuda = { path = "../vortex-cuda", optional = true }
+tokio = { workspace = true, features = ["rt", "macros"], optional = true }
 
 [lints]
 workspace = true
