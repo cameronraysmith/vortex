@@ -151,10 +151,12 @@ fn fsst_decode<S: IntegerPType + AsPrimitive<usize> + AsPrimitive<u32>>(
                 spare_capacity = &mut spare_capacity[uncompressed_len..];
             }
         }
-        Mask::AllFalse(_) => {
-            // Nothing to decompress
-            unsafe { uncompressed.set_len(0) };
-            return (Buffer::empty(), uncompressed.freeze());
+        Mask::AllFalse(len) => {
+            // All selected elements are null - no data to decompress, but we still need
+            // to return a views buffer with the correct length to match the validity.
+            // Each null element gets an empty view.
+            let views = Buffer::from_iter(std::iter::repeat_n(BinaryView::default(), *len));
+            return (views, ByteBuffer::empty());
         }
         Mask::Values(values) => {
             for (filtered_idx, (idx, is_valid)) in filter_mask
@@ -200,4 +202,51 @@ fn fsst_decode<S: IntegerPType + AsPrimitive<usize> + AsPrimitive<u32>>(
     unsafe { views.set_len(filtered_uncompressed_lengths.len()) };
 
     (views.freeze(), uncompressed)
+}
+
+#[cfg(test)]
+mod tests {
+    use vortex_array::Canonical;
+    use vortex_array::IntoArray;
+    use vortex_array::VortexSessionExecute;
+    use vortex_array::arrays::FilterArray;
+    use vortex_array::arrays::builder::VarBinBuilder;
+    use vortex_dtype::DType;
+    use vortex_dtype::Nullability;
+    use vortex_error::VortexResult;
+    use vortex_mask::Mask;
+    use vortex_session::VortexSession;
+
+    use crate::fsst_compress;
+    use crate::fsst_train_compressor;
+
+    /// Regression test for https://github.com/vortex-data/vortex/issues/6034
+    ///
+    /// Uses `execute::<Canonical>()` to trigger the parent kernel path.
+    #[test]
+    fn test_filter_fsst_all_null() -> VortexResult<()> {
+        // Train compressor on a valid string.
+        let mut training = VarBinBuilder::<i32>::with_capacity(1);
+        training.append_value(b"hello");
+        let compressor =
+            fsst_train_compressor(&training.finish(DType::Utf8(Nullability::Nullable)));
+
+        // Create an all-null FSST array (Validity::AllInvalid).
+        let mut builder = VarBinBuilder::<i32>::with_capacity(4);
+        builder.append_n_nulls(4);
+        let fsst_array = fsst_compress(
+            builder.finish(DType::Utf8(Nullability::Nullable)),
+            &compressor,
+        );
+
+        // Select 3 of 4 nulls (mask must be Values, not AllTrue, to trigger kernel).
+        let mask = Mask::from_iter([false, true, true, true]);
+        let filter_array = FilterArray::new(fsst_array.into_array(), mask);
+
+        let mut ctx = VortexSession::empty().create_execution_ctx();
+        let canonical = filter_array.into_array().execute::<Canonical>(&mut ctx)?;
+        assert_eq!(canonical.len(), 3);
+
+        Ok(())
+    }
 }
