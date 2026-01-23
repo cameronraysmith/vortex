@@ -121,7 +121,7 @@ jobs:
     uses: ./.github/workflows/run-fuzzer.yml
     with:
       fuzz_target: compress_gpu
-      family: "g5+g4dn+g6"
+      family: "g4dn"
       image: "ubuntu24-gpu-x64"
       extra_features: "cuda"
     secrets:
